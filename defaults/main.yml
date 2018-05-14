@@ -189,3 +189,7 @@ cvmfs_upgrade_server: false
 # Install a setuid binary allowing unprivileged users to call `cvmfs_config wipecache` or `cvmfs_talk remount sync`?
 cvmfs_install_setuid_cvmfs_wipecache: no
 cvmfs_install_setuid_cvmfs_remount_sync: no
+
+# You can manually specify a role if you don't want to or cannot use the
+# group_names
+# cvmfs_role: 'client' # (Or stratum1 or stratum0 or localproxy)
