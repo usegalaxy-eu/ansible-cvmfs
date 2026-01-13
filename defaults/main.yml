@@ -18,8 +18,10 @@ cvmfs_stratum1_http_ports:
 cvmfs_localproxy_http_ports:
   - 3128
 
-cvmfs_stratum1_apache_port: 8008
+cvmfs_stratum1_apache_port: "{{ cvmfs_stratum1_squid_enabled | ternary(8008, 80) }}"
 cvmfs_stratum1_cache_mem: 128 # MB
+
+cvmfs_stratum1_squid_enabled: true
 
 # Stratum 1 snapshot cron job timing, hash keys correspond to the cron module options:
 #   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/cron_module.html
@@ -104,10 +106,10 @@ cvmfs_config_repo: {}
 # CVMFS_CONFIG_REPOSITORY is not supported on Debian < 9, Ubuntu LTS < 18.04
 cvmfs_config_repo_supported: >-
   {{
-    'true' if ansible_os_family != 'Debian' else (
-    'true' if (ansible_distribution == 'Debian' and ansible_distribution_version is version('9', '>=')) else (
-    'true' if (ansible_distribution == 'Ubuntu' and ansible_distribution_version is version('18.04', '>=')) else
-    'false'))
+    true if ansible_os_family != 'Debian' else (
+    true if (ansible_distribution == 'Debian' and ansible_distribution_version is version('9', '>=')) else (
+    true if (ansible_distribution == 'Ubuntu' and ansible_distribution_version is version('18.04', '>=')) else
+    false))
   }}
 
 # When to update the GeoIP database, if cvmfs_geo_license_key is defined
@@ -121,6 +123,19 @@ cvmfs_geoip_db_update_day: "{{ 28 | random(seed=inventory_hostname) }}"
 #   2. the entry in 'cvmfs_repositories' has 'stratum0_url_scheme' set to 'https', and
 #   3. this points to a cert bundle that contains CA certs for your Stratum 0 (the default here is valid for EL).
 # cvmfs_x509_cert_bundle: /etc/pki/tls/cert.pem
+
+# The role will deploy a PolicyKit rule that allows unprivileged users to manage the services in cvmfs_manage_units if
+# either of the following two options are set.
+
+# Either a list of usernames, or set to a boolean true to automatically use the 'owner's in cvmfs_repositories
+#cvmfs_manage_units_users: ...
+
+# A group name
+#cvmfs_manage_units_group: ...
+
+# The list of units that can be managed by users in the above group
+cvmfs_manage_units:
+  - squid.service
 
 #
 # Galaxy-specific stuff follows
@@ -158,8 +173,7 @@ galaxy_cvmfs_config_repo:
     client_options: []
 # Defaults for galaxyproject.org repos
 galaxy_cvmfs_keys:
-  # This will become the key for all repos, currently cvmfs-config,
-  # singularity and refgenomes-databio.
+  # This will become the key for all repos, currently cvmfs-config, singularity, and test
   - path: /etc/cvmfs/keys/galaxyproject.org/galaxyproject.org.pub
     key: |
       -----BEGIN PUBLIC KEY-----
@@ -170,28 +184,6 @@ galaxy_cvmfs_keys:
       S5SVemmu6Yb8GkGwLGmMVLYXutuaHdMFyKzWm+qFlG5JRz4okUWERvtJ2QAJPOzL
       mAG1ceyBFowj/r3iJTa+Jcif2uAmZxg+cHkZG5KzATykF82UH1ojUzREMMDcPJi2
       dQIDAQAB
-      -----END PUBLIC KEY-----
-  - path: /etc/cvmfs/keys/galaxyproject.org/singularity.galaxyproject.org.pub
-    key: |
-      -----BEGIN PUBLIC KEY-----
-      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuJZTWTY3/dBfspFKifv8
-      TWuuT2Zzoo1cAskKpKu5gsUAyDFbZfYBEy91qbLPC3TuUm2zdPNsjCQbbq1Liufk
-      uNPZJ8Ubn5PR6kndwrdD13NVHZpXVml1+ooTSF5CL3x/KUkYiyRz94sAr9trVoSx
-      THW2buV7ADUYivX7ofCvBu5T6YngbPZNIxDB4mh7cEal/UDtxV683A/5RL4wIYvt
-      S5SVemmu6Yb8GkGwLGmMVLYXutuaHdMFyKzWm+qFlG5JRz4okUWERvtJ2QAJPOzL
-      mAG1ceyBFowj/r3iJTa+Jcif2uAmZxg+cHkZG5KzATykF82UH1ojUzREMMDcPJi2
-      dQIDAQAB
-      -----END PUBLIC KEY-----      
-  - path: /etc/cvmfs/keys/galaxyproject.org/test.galaxyproject.org.pub
-    key: |
-      -----BEGIN PUBLIC KEY-----
-      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfc5SSX9ALcrukWYcxkI
-      mkLhlkJa5tCP1oZNWFA7GfE4xQW2vcKE5qmbZqhYVfdiy+FHPnhWPJp577hekD2F
-      vMITbApdZ0265AjRC0+EKKxpMF8zZ0q71vCFxvdK0c3DtT/3LmqKrr2wimtJZjQN
-      UAZcQG2ykzeHzFZ46w74IO0o8Fv/w2XEbYI0QqbNFv+0hcp5SruFqaaLsRZdd6Bn
-      3iSylgVRQ5b+h1LfB/EuEpSmH1sDozZ4tU0fpbrBSknK76aad1o/cvWY1X87ToUV
-      helU0HE2Rw/u9EqJDvPFTbUmad3MtspkqbG5Eo7lI+ktzbcD7UTsQ/7noIXIQ5dD
-      PwIDAQAB
       -----END PUBLIC KEY-----
   - path: /etc/cvmfs/keys/galaxyproject.org/data.galaxyproject.org.pub
     key: |
@@ -214,39 +206,6 @@ galaxy_cvmfs_keys:
       Jv5rPWCYz5/sDNW4cNvBdBjwGf46etbczmJoTAbl0oM6LLGdebwkJStd0R1wkj+A
       torRYcoFZICTZqY9e/KsadHUeZnH3RvfMypH5oS1POzsFszoSxBhZIBkZbG3/f9Y
       OQIDAQAB
-      -----END PUBLIC KEY-----
-  - path: /etc/cvmfs/keys/galaxyproject.org/sandbox.galaxyproject.org.pub
-    key: |
-      -----BEGIN PUBLIC KEY-----
-      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1jHnrwsxMUkMZDAj9GMt
-      WNCFFrNVejTTbyklk+52yyXgVgRWo1qN+5lh6W2UL/b2v9pOEzRVPZBQvNNwKo6P
-      e+5p2JBVJ5yv7tpegEnHaRYw6yoHlWLzeSfiu8/yNp2s3jzK52zdLE9rZu7KlXH3
-      EiY2LbU8wa0oah8BlvqWoHlWm78IQbbgK3Q0KmsXpvpjjhYkRWh/TL7KRmwT0b+C
-      WDNbviUi62sBl1SWQ95kcsfqfviU94DKGWRWDYngnYRV5PZVLuUw8Egix6lW2Sj0
-      l5LILRbaIyXiTsFqXfK1dtjAOmZMkX4wuBch13y9FhMCIRvBDWYQuyxugSC101Ur
-      YwIDAQAB
-      -----END PUBLIC KEY-----
-  - path: /etc/cvmfs/keys/galaxyproject.org/usegalaxy.galaxyproject.org.pub
-    key: |
-      -----BEGIN PUBLIC KEY-----
-      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsqb8HIG5T/juOmVpByIE
-      UfboKj7S2LbnWCZdCAoA9EfQfsxi/p3iWu1j9/0iJjf4yKs+pI6mJL/t+txB9fM5
-      EYdYJv/awH7W4A47e8/CR25HzoM9PjxbssRbHSGWLrDBPHUcyQh7gZGqJYdXIyeS
-      DrgPoftn04xuLQvmPWbi8Ng14c+Kn8947PxZ5hVOmApEd4gzkHI0qFfC7dTN/rTh
-      KdC5mWONdRmmSDM4OmgJl7wdzE5pUTA+H1GagESxG4Cm/7EN9ZnVgWdb/sgVTxHG
-      e3odhIy/hV82RHkaW456/jhd8tD8LHpY8jdM/rWvwrBgI7WntqSijOUe2a6uC7S1
-      sQIDAQAB
-      -----END PUBLIC KEY-----
-  - path: /etc/cvmfs/keys/galaxyproject.org/refgenomes-databio.galaxyproject.org.pub
-    key: |
-      -----BEGIN PUBLIC KEY-----
-      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuJZTWTY3/dBfspFKifv8
-      TWuuT2Zzoo1cAskKpKu5gsUAyDFbZfYBEy91qbLPC3TuUm2zdPNsjCQbbq1Liufk
-      uNPZJ8Ubn5PR6kndwrdD13NVHZpXVml1+ooTSF5CL3x/KUkYiyRz94sAr9trVoSx
-      THW2buV7ADUYivX7ofCvBu5T6YngbPZNIxDB4mh7cEal/UDtxV683A/5RL4wIYvt
-      S5SVemmu6Yb8GkGwLGmMVLYXutuaHdMFyKzWm+qFlG5JRz4okUWERvtJ2QAJPOzL
-      mAG1ceyBFowj/r3iJTa+Jcif2uAmZxg+cHkZG5KzATykF82UH1ojUzREMMDcPJi2
-      dQIDAQAB
       -----END PUBLIC KEY-----
 
 galaxy_cvmfs_server_urls:

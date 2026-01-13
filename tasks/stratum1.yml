@@ -28,6 +28,7 @@
   ansible.builtin.include_tasks: squid.yml
   vars:
     _cvmfs_squid_conf_src: "{{ cvmfs_squid_conf_src | default('stratum1_squid.conf.j2') }}"
+  when: cvmfs_stratum1_squid_enabled
 
 - name: Include firewall tasks
   ansible.builtin.include_tasks: firewall.yml
@@ -38,10 +39,19 @@
 - name: Install GeoIP API key
   ansible.builtin.copy:
     content: |
+      CVMFS_GEO_ACCOUNT_ID="{{ cvmfs_geo_account_id }}"
       CVMFS_GEO_LICENSE_KEY="{{ cvmfs_geo_license_key }}"
     mode: 0400
     dest: /etc/cvmfs/server.local
   when: cvmfs_geo_license_key is defined
+
+- name: Bypassing GeoIP API key
+  ansible.builtin.copy:
+    content: |
+      CVMFS_GEO_DB_FILE=NONE
+    mode: 0400
+    dest: /etc/cvmfs/server.local
+  when: cvmfs_geo_license_key is not defined
 
 - name: Ensure replicas are configured
   ansible.builtin.command: >-
@@ -127,4 +137,4 @@
     src: 01-manage-units.rules.j2
     dest: /etc/polkit-1/rules.d/01-manage-units.rules
     mode: 0644
-  when: cvmfs_manage_units_group is defined
+  when: cvmfs_manage_units_users is defined or cvmfs_manage_units_group is defined
